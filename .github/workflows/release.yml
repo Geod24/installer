@@ -1,0 +1,102 @@
+# Build the release
+#
+# The release is built on Mac OSX, Windows, and Linux through this action.
+# Other platforms can later be supported if we add runners for it,
+# e.g. FreeBSD.
+#
+name: Release
+
+on:
+  # The main mean for build is through schedule, as this repository
+  # usually sees little activity
+  schedule:
+    # Every hour
+    - cron:  '0 * * * *'
+  # Also build on PR / push
+  pull_request:
+    branches:
+      - master
+      - stable
+  push:
+    branches:
+      - master
+      - stable
+      # Use this branch name in your fork to test changes
+      - github-actions
+
+jobs:
+  main:
+    name: Release
+    strategy:
+      fail-fast: false
+      matrix:
+        # Use versions to make build reproducible
+        os: [ macOS-10.15, ubuntu-18.04, windows-2019 ]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+
+      ########################################
+      #    Setting up the host D compiler    #
+      ########################################
+      - name: Install host LDC
+        uses: dlang-community/setup-dlang@v1
+        with:
+          compiler: ldc-1.21.0
+
+      ########################################
+      #  Checking out up everything we need  #
+      ########################################
+      - name: Checkout installer
+        uses: actions/checkout@v2
+        with:
+          path: installer
+
+      - name: Checkout DMD
+        uses: actions/checkout@v2
+        with:
+          path: dmd
+          repository: dlang/dmd
+          ref: ${{ github.base_ref }}
+
+      - name: Checkout druntime
+        uses: actions/checkout@v2
+        with:
+          path: druntime
+          repository: dlang/druntime
+          ref: ${{ github.base_ref }}
+
+      - name: Checkout Phobos
+        uses: actions/checkout@v2
+        with:
+          path: phobos
+          repository: dlang/phobos
+          ref: ${{ github.base_ref }}
+
+      - name: Checkout Dub
+        uses: actions/checkout@v2
+        with:
+          path: dub
+          repository: dlang/dub
+          ref: ${{ github.base_ref }}
+
+      - name: Checkout tools
+        uses: actions/checkout@v2
+        with:
+          path: tools
+          repository: dlang/tools
+          ref: ${{ github.base_ref }}
+
+      ########################################
+      #    Building everything using HOST    #
+      ########################################
+      - name: '[Posix] Build every projects'
+        run: |
+          # DMD / druntime / Phobos
+          ./dmd/src/build.d -j2 MODEL=64 HOST_DC=ldmd2 BUILD=release
+          make -C druntime -f posix.mak -j2 MODEL=64 BUILD=release
+          make -C phobos   -f posix.mak -j2 MODEL=64 BUILD=release
+          # Tools
+          make -C tools   -f posix.mak -j2 MODEL=64 BUILD=release
+          # Dub
+          cd dub && DMD=ldmd2 ./build.d && cd ../

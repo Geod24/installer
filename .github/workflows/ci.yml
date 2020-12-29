@@ -1,0 +1,44 @@
+name: CI
+on: [ push, pull_request ]
+
+jobs:
+  main:
+    name: Run
+    strategy:
+      fail-fast: false
+      matrix:
+        # Use 10.14 as 10.15 and over don't work with DMD < 2.087.1
+        os: [ ubuntu-latest, macOS-10.14, windows-latest ]
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: '[Windows|OSX] Test'
+        if: matrix.os != 'ubuntu-latest'
+        shell: bash
+        run: |
+          ./test/all.sh
+
+      - name: '[Linux] Install dependencies'
+        env:
+          KCOV_VERSION: 34
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck, binutils-dev, libcurl4-openssl-dev, zlib1g-dev, libdw-dev, libiberty-dev
+          curl -fsSL https://github.com/SimonKagstrom/kcov/archive/v"$KCOV_VERSION".tar.gz | tar -C "$HOME" -zxf -
+          pushd "$HOME/kcov-$KCOV_VERSION"
+          cmake -DCMAKE_INSTALL_PREFIX=$HOME/.local .
+          make install -j$(nproc)
+          popd
+
+      - name: '[Linux] Test with coverage'
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          kcov ${{ github.workspace }}/coverage ./test/all.sh
+
+      - name: Upload code coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v1
+        with:
+          directory: ${{ github.workspace }}/coverage
